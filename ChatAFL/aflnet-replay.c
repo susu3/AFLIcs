@@ -49,6 +49,8 @@ int main(int argc, char* argv[])
   else if (!strcmp(argv[2], "SIP")) extract_response_codes = &extract_response_codes_sip;
   else if (!strcmp(argv[2], "HTTP")) extract_response_codes = &extract_response_codes_http;
   else if (!strcmp(argv[2], "IPP")) extract_response_codes = &extract_response_codes_ipp;
+  else if (!strcmp(argv[2], "MODBUS")) extract_response_codes = &extract_response_codes_modbus;
+  else if (!strcmp(argv[2], "IEC104")) extract_response_codes = &extract_response_codes_iec104;
   else {fprintf(stderr, "[AFLNet-replay] Protocol %s has not been supported yet!\n", argv[2]); exit(1);}
 
   portno = atoi(argv[3]);
