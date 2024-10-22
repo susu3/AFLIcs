@@ -105,7 +105,8 @@ EXP_ST u8 *in_dir, /* Input directory with test cases  */
     *in_bitmap,    /* Input bitmap                     */
     *doc_path,     /* Path to documentation dir        */
     *target_path,  /* Path to target binary            */
-    *orig_cmdline; /* Original command line            */
+    *orig_cmdline, /* Original command line            */
+    *rfc_path;     /* Path to RFC document             */
 
 EXP_ST u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
@@ -431,44 +432,37 @@ char *protocol_name;
 u32 reward_random;
 u32 reward_grammar;
 
+//get the grammars for the protocol from the LLM
 void setup_llm_grammars()
 {
 
-  ACTF("Getting grammars from LLM...");
+  //ACTF("Getting grammars from LLM...");
 
   khash_t(consistency_table) *const_table = kh_init(consistency_table);
   char *first_question;
-  char *templates_prompt = construct_prompt_for_templates(protocol_name, &first_question);
+  char *grammars_prompt = construct_prompt_for_grammars(protocol_name, &first_question);
 
   for (int iter = 0; iter < TEMPLATE_CONSISTENCY_COUNT; iter++)
   {
     klist_t(gram) *grammar_list = kl_init(gram);
 
-    char *templates_answer = chat_with_llm(templates_prompt, "turbo", GRAMMAR_RETRIES, 0.5);
-    if (templates_answer == NULL)
-      goto free_templates_answer;
-
-    // printf("## Answer from LLM:\n %s\n", templates_answer);
-    char *remaining_prompt = construct_prompt_for_remaining_templates(protocol_name, first_question, templates_answer);
-    // printf("remaining prompt is:\n %s\n", remaining_prompt);
-    char *remaining_templates = chat_with_llm(remaining_prompt, "turbo", GRAMMAR_RETRIES, 0.5);
-    if (remaining_templates == NULL)
-      goto free_remaining;
-
-    // printf("## Remaining templates:\n %s\n", remaining_templates);
-
-    char *combined_templates = NULL;
-    asprintf(&combined_templates, "%s\n%s", templates_answer, remaining_templates);
+    char *grammars_answer = chat_with_llm(grammars_prompt, "turbo", GRAMMAR_RETRIES, 0.5);
+    if (grammars_answer == NULL)
+      goto free_grammars_answer;
 
     char *grammar_output_path = alloc_printf("%s/protocol-grammars/llm-grammar-output-%d", out_dir, iter);
     int grammar_output_fd = open(grammar_output_path, O_WRONLY | O_CREAT, 0600);
 
-    ck_write(grammar_output_fd, combined_templates, strlen(combined_templates), grammar_output_path);
+    ck_write(grammar_output_fd, grammars_answer, strlen(grammars_answer), grammar_output_path);
 
     close(grammar_output_fd);
     ck_free(grammar_output_path);
 
-    extract_message_grammars(combined_templates, grammar_list);
+
+
+    
+
+    extract_message_grammars(grammars_answer, grammar_list);
 
     kliter_t(gram) * iter;
     for (iter = kl_begin(grammar_list); iter != kl_end(grammar_list); iter = kl_next(iter))
@@ -545,6 +539,66 @@ void setup_llm_grammars()
 
   free(first_question);
   free(templates_prompt);
+}
+
+//read the initial seeds from the seed file, and enrich them with LLM-generated messages
+void enrich_initial_seeds()
+{
+  char *seed_question = NULL;
+  const char *seedfile_path = in_dir;
+  //1. read the initial seeds from the seed file, and enrich them with LLM-generated messages
+  char *seeds_prompt = construct_prompt_for_seeds(protocol_name, &seed_question, seedfile_path, rfc_path);
+  char *seeds_answer = chat_with_llm(seeds_prompt, "gpt-4o-mini", GRAMMAR_RETRIES, 0.5);
+  free(seeds_prompt);
+  if(seeds_answer == NULL)
+  {
+    printf("Failed to get seeds from LLM\n");
+    return;
+  }
+  printf("Seeds answer: %s\n", seeds_answer);
+
+  //2. get the grammars for the protocol and randomly generate valid values for the fields
+  // Extract sequences from the LLM output
+  int num_sequences = 0;
+  char **sequences = extract_sequences(seeds_answer, &num_sequences);
+
+  if (sequences != NULL && num_sequences > 0) {
+    printf("Extracted %d sequences from LLM output\n", num_sequences);
+    // Write the extracted sequences to seed files
+    write_sequences_to_seeds(seedfile_path, sequences, num_sequences);
+
+    // Free the allocated memory for sequences
+    for (int i = 0; i < num_sequences; i++) {
+      free(sequences[i]);
+    }
+    free(sequences);
+  } else {
+    WARNF("No valid sequences extracted from LLM output");
+  }
+}
+
+void write_sequences_to_seeds(const char *seedfile_path, char **sequences, int num_sequences) {
+  time_t t = time(NULL);
+  struct tm *tm = localtime(&t);
+  char timestamp[15] = {0};
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", tm);
+
+  for (int i = 0; i < num_sequences; i++) {
+    char *seed_filename = malloc(strlen(seedfile_path) + 30); // Allocate enough space for path, timestamp, number, and extension
+    sprintf(seed_filename, "%s/%s_%d", seedfile_path, timestamp, i + 1);
+
+    FILE *seed_file = fopen(seed_filename, "w");
+    if (seed_file == NULL) {
+      PFATAL("Unable to create seed file: %s", seed_filename);
+    }
+
+    if (fwrite(sequences[i], strlen(sequences[i]), 1, seed_file) != 1) {
+      PFATAL("Failed to write to seed file: %s", seed_filename);
+    }
+
+    fclose(seed_file);
+    free(seed_filename);
+  }
 }
 
 range_list parse_buffer(char *buf, size_t buf_len)
@@ -8162,7 +8216,6 @@ havoc_stage:
   // }
   range_list original_ranges;
   kv_init(original_ranges);
-
   double epsilon = UR(100) / 100.0;
 
   int is_exploration = epsilon < EPSILON_CHOICE;
@@ -10239,6 +10292,12 @@ int main(int argc, char **argv)
       out_dir = optarg;
       break;
 
+    case 'r':
+      if (rfc_path)
+        FATAL("Multiple -r options not supported");
+      rfc_path = optarg;
+      break;
+
     case 'M':
     { /* master sync ID */
 
@@ -10693,8 +10752,9 @@ int main(int argc, char **argv)
     protocol_patterns = kl_init(rang);
     message_types_set = kh_init(strSet);
 
-    setup_llm_grammars();
-    enrich_testcases();
+    //setup_llm_grammars();
+    enrich_initial_seeds();
+    //enrich_testcases();
   }
   read_testcases();
   load_auto();

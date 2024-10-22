@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 
 #include "chat-llm.h"
 #include "alloc-inl.h"
@@ -13,7 +15,7 @@
 // -lcurl -ljson-c -lpcre2-8
 // apt install libcurl4-openssl-dev libjson-c-dev libpcre2-dev libpcre2-8-0
 
-#define MAX_TOKENS 2048
+#define MAX_TOKENS 2048   //....................????????????????????/////?
 #define CONFIDENT_TIMES 3
 
 struct MemoryStruct
@@ -22,9 +24,10 @@ struct MemoryStruct
     size_t size;
 };
 
+//contents: the response come from the LLM, size: the size of the data, nmemb: the number of the data, userp: the pointer to the struct MemoryStruct to store the data
 static size_t chat_with_llm_helper(void *contents, size_t size, size_t nmemb, void *userp)
 {
-    size_t realsize = size * nmemb;
+    size_t realsize = size * nmemb; //total size of the response
     struct MemoryStruct *mem = (struct MemoryStruct *)userp;
 
     mem->memory = realloc(mem->memory, mem->size + realsize + 1);
@@ -37,37 +40,23 @@ static size_t chat_with_llm_helper(void *contents, size_t size, size_t nmemb, vo
 
     memcpy(&(mem->memory[mem->size]), contents, realsize);
     mem->size += realsize;
-    mem->memory[mem->size] = 0;
+    mem->memory[mem->size] = 0; //ensure the string is terminated
 
     return realsize;
 }
 
+//get the "content" from the curl response
 char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
 {
     CURL *curl;
     CURLcode res = CURLE_OK;
     char *answer = NULL;
-    char *url = NULL;
-    if (strcmp(model, "instruct") == 0)
-    {
-        url = "https://api.openai.com/v1/completions";
-    }
-    else
-    {
-        url = "https://api.openai.com/v1/chat/completions";
-    }
+    char *url = "https://api.openai.com/v1/chat/completions";
     char *auth_header = "Authorization: Bearer " OPENAI_TOKEN;
     char *content_header = "Content-Type: application/json";
     char *accept_header = "Accept: application/json";
     char *data = NULL;
-    if (strcmp(model, "instruct") == 0)
-    {
-        asprintf(&data, "{\"model\": \"gpt-3.5-turbo-instruct\", \"prompt\": \"%s\", \"max_tokens\": %d, \"temperature\": %f}", prompt, MAX_TOKENS, temperature);
-    }
-    else
-    {
-        asprintf(&data, "{\"model\": \"gpt-3.5-turbo\",\"messages\": %s, \"max_tokens\": %d, \"temperature\": %f}", prompt, MAX_TOKENS, temperature);
-    }
+    asprintf(&data, "{\"model\": \"gpt-4o-mini\",\"messages\": %s, \"max_tokens\": %d, \"temperature\": %f}", prompt, MAX_TOKENS, temperature);
     curl_global_init(CURL_GLOBAL_DEFAULT);
     do
     {
@@ -100,38 +89,30 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
                 if (json_object_object_get_ex(jobj, "choices", NULL))
                 {
                     json_object *choices = json_object_object_get(jobj, "choices");
-                    json_object *first_choice = json_object_array_get_idx(choices, 0);
+                    json_object *first_choice = json_object_array_get_idx(choices, 0); //the first element of the array choices
                     const char *data;
 
                     // The answer begins with a newline character, so we remove it
-                    if (strcmp(model, "instruct") == 0)
-                    {
-                        json_object *jobj4 = json_object_object_get(first_choice, "text");
-                        data = json_object_get_string(jobj4);
-                    }
-                    else
-                    {
-                        json_object *jobj4 = json_object_object_get(first_choice, "message");
-                        json_object *jobj5 = json_object_object_get(jobj4, "content");
-                        data = json_object_get_string(jobj5);
-                    }
+                    json_object *jobj4 = json_object_object_get(first_choice, "message");
+                    json_object *jobj5 = json_object_object_get(jobj4, "content");
+                    data = json_object_get_string(jobj5);
                     if (data[0] == '\n')
                         data++;
-                    answer = strdup(data);
+                    answer = strdup(data); //copy data to answer
                 }
                 else
                 {
                     printf("Error response is: %s\n", chunk.memory);
                     sleep(2); // Sleep for a small amount of time to ensure that the service can recover
                 }
-                json_object_put(jobj);
+                json_object_put(jobj); //free memory
             }
             else
             {
                 printf("Error: %s\n", curl_easy_strerror(res));
             }
 
-            curl_slist_free_all(headers);
+            curl_slist_free_all(headers); 
             curl_easy_cleanup(curl);
         }
 
@@ -146,6 +127,176 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
     curl_global_cleanup();
     return answer;
 }
+
+//construct the prompt for the generate initial seeds, according to the provided RFC document and some examples
+// Function: construct_prompt_for_seeds
+// Parameters:
+//   - protocol_name: Name of the protocol (e.g., "MODBUS", "IEC104")
+//   - final_msg: Pointer to a char pointer that will store the final message
+//   - seedfile_path: Path to the directory containing seed files
+//   - rfc_path: Path to the RFC document file
+// Returns:
+//   A dynamically allocated string containing the formatted prompt for the LLM,
+//   or NULL if an error occurs during file reading or memory allocation.
+char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *seedfile_path, char *rfc_path)
+{   
+    char *prompt_grammars = NULL;
+    char *msg = NULL;
+    char *rfc_content = NULL;
+
+    // Read RFC content
+    FILE *fp = fopen(rfc_path, "r");
+    if (fp == NULL){
+        printf("Error opening file %s\n", rfc_path);
+        return NULL;
+    }
+    fseek(fp, 0, SEEK_END);
+    size_t file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    char *rfc_file_content = malloc(file_size + 1);
+    if(rfc_file_content == NULL){
+        printf("Error allocating memory for %s\n", rfc_path);
+        fclose(fp);
+        return NULL;
+    }
+    fread(rfc_file_content, 1, file_size, fp);
+    rfc_file_content[file_size] = '\0';
+    fclose(fp);
+
+    // Load example seed files
+    char *example_seeds[2] = {NULL, NULL};
+    int example_count = 0;
+    DIR *dir;
+    struct dirent *ent;
+    if ((dir = opendir(seedfile_path)) != NULL) {
+        while ((ent = readdir(dir)) != NULL && example_count < 2) {
+            if (ent->d_type == DT_REG) {
+                char *file_path = malloc(strlen(seedfile_path) + strlen(ent->d_name) + 2);
+                sprintf(file_path, "%s/%s", seedfile_path, ent->d_name);
+                FILE *seed_file = fopen(file_path, "r");
+                if (seed_file != NULL) {
+                    fseek(seed_file, 0, SEEK_END);
+                    long seed_size = ftell(seed_file);
+                    fseek(seed_file, 0, SEEK_SET);
+                    example_seeds[example_count] = malloc(seed_size + 1);
+                    fread(example_seeds[example_count], 1, seed_size, seed_file);
+                    example_seeds[example_count][seed_size] = '\0';
+                    fclose(seed_file);
+                    example_count++;
+                }
+                free(file_path);
+            }
+        }
+        closedir(dir);
+    }
+
+    // Construct the prompt
+    const char *prompt_template =
+        "You are a fuzz test expert writing fuzz test cases for the %s protocol.\n"
+        "For the %s protocol, refer to the specification document below, output as many different request sequences as possible.\n"
+        "Wrap each request example with <sequence></sequence>. There should be one space after every 4 hex characters. Each output must be a valid request sequence. As a special note, the packet length field must match the actual length of the data.\n"
+        "For the MODBUS protocol, a request sequence example is (in hex): <sequence>0000 0000 0008 FF16 0004 00F2 0025</sequence>\n"
+        "For the IEC104 protocol, a request sequence example is (in hex): <sequence>6804 0700 0000 6804 4300 0000 6804 1300 0000</sequence>\n"
+        "%s"
+        "The Specification Document of %s protocol is as follows:\n"
+        "=== BEGIN SPEC ===\n"
+        "%s\n"
+        "=== END SPEC ===\n";
+
+    const char *example_template = "Example %d: <sequence>%s</sequence>\n";
+    
+    char *examples_str = NULL;
+    if (example_count > 0) {
+        asprintf(&examples_str, "Here are some example seed files for the %s protocol:\n", protocol_name);
+        for (int i = 0; i < example_count; i++) {
+            char *temp = examples_str;
+            asprintf(&examples_str, "%s%s", temp, example_template);
+            free(temp);
+        }
+    } else {
+        examples_str = strdup("");
+    }
+
+    asprintf(&msg, prompt_template, 
+        protocol_name, protocol_name,
+        examples_str,
+        protocol_name, rfc_file_content);
+
+    free(examples_str);
+
+    *final_msg = msg;
+
+    asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", msg);
+
+    free(rfc_file_content);
+    if (example_seeds[0]) free(example_seeds[0]);
+    if (example_seeds[1]) free(example_seeds[1]);
+
+    return prompt_grammars;
+}
+
+//construct the prompt for the grammars of the protocol
+char *construct_prompt_for_grammars(char *protocol_name, char **final_msg){
+    char *prompt_format = "Desired format: field name <value ranges> | field name <value ranges> | ...";
+
+    char *msg = NULL;
+    asprintf(&msg, "For the %s protocol, refer to the specification document, output protocol format and value range of each field, with fields separated by character '|'.\n%s", protocol_name, prompt_format);
+    *final_msg = msg;
+
+    char *prompt_grammars = NULL;
+    asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", msg);
+
+    return prompt_grammars;
+}
+
+//extract the grammars from the answer of the LLM
+void extract_message_grammars(char *answers, klist_t(gram) * grammar_list)
+{
+
+    char *ptr = answers;
+    int len = strlen(answers);
+
+    while (ptr < answers + len)
+    {
+        char *start = strchr(ptr, '[');
+        if (start == NULL)
+            break;
+        char *end = strchr(start, ']');
+        if (end == NULL)
+            break;
+        int count = end - start + 1;
+        char *temp = (char *)ck_alloc(count + 1);
+        strncpy(temp, start, count);
+        temp[count] = '\0';
+        ptr = end + 1;
+
+        // conver temp to json object and save it to the list
+        json_object *jobj = json_tokener_parse(temp);
+        *kl_pushp(gram, grammar_list) = jobj;
+
+        // printf("%s\n", temp);
+    }
+}
+
+//handing escape characters in the message
+char *format_string(char *state_string)
+{
+    //remove the newline and whiltespace in the beginning of the string if any
+    while (state_string[0] == '\n' || state_string[0] == ' ' || state_string[0] == '\t' || state_string[0] == '\r')
+    {
+        state_string++;
+    }
+
+    int len = strlen(state_string);
+    while (state_string[len - 1] == '\n' || state_string[len - 1] == '\r' || state_string[len - 1] == ' ' || state_string[len - 1] == '.')
+    {
+        state_string[len - 1] = '\0';
+        len--;
+    }
+
+    return state_string;
+}
+
 
 char *construct_prompt_stall(char *protocol_name, char *examples, char *history)
 {
@@ -163,35 +314,6 @@ char *construct_prompt_stall(char *protocol_name, char *examples, char *history)
     free(prompt);
 
     return final_prompt;
-}
-
-char *construct_prompt_for_templates(char *protocol_name, char **final_msg)
-{
-    // Give one example for learning formats
-    char *prompt_rtsp_example = "For the RTSP protocol, the DESCRIBE client request template is:\\n"
-                                "DESCRIBE: [\\\"DESCRIBE <<VALUE>>\\\\r\\\\n\\\","
-                                "\\\"CSeq: <<VALUE>>\\\\r\\\\n\\\","
-                                "\\\"User-Agent: <<VALUE>>\\\\r\\\\n\\\","
-                                "\\\"Accept: <<VALUE>>\\\\r\\\\n\\\","
-                                "\\\"\\\\r\\\\n\\\"]";
-
-    char *prompt_http_example = "For the HTTP protocol, the GET client request template is:\\n"
-                                "GET: [\\\"GET <<VALUE>>\\\\r\\\\n\\\"]";
-
-    char *msg = NULL;
-    asprintf(&msg, "%s\\n%s\\nFor the %s protocol, all of client request templates are :", prompt_rtsp_example, prompt_http_example, protocol_name);
-    *final_msg = msg;
-    /** Format of prompt_grammars
-    prompt_grammars = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": msg}
-    ]
-     **/
-    char *prompt_grammars = NULL;
-
-    asprintf(&prompt_grammars, "[{\"role\": \"system\", \"content\": \"You are a helpful assistant.\"}, {\"role\": \"user\", \"content\": \"%s\"}]", msg);
-
-    return prompt_grammars;
 }
 
 char *construct_prompt_for_remaining_templates(char *protocol_name, char *first_question, char *first_answer)
@@ -244,9 +366,9 @@ char *extract_stalled_message(char *message, size_t message_len)
     return res;
 }
 
+
 char *format_request_message(char *message)
 {
-
     int message_len = strlen(message);
     int max_len = message_len;
     int res_len = 0;
@@ -376,33 +498,7 @@ char *construct_prompt_for_requests_to_states(const char *protocol_name,
     return prompt;
 }
 
-void extract_message_grammars(char *answers, klist_t(gram) * grammar_list)
-{
 
-    char *ptr = answers;
-    int len = strlen(answers);
-
-    while (ptr < answers + len)
-    {
-        char *start = strchr(ptr, '[');
-        if (start == NULL)
-            break;
-        char *end = strchr(start, ']');
-        if (end == NULL)
-            break;
-        int count = end - start + 1;
-        char *temp = (char *)ck_alloc(count + 1);
-        strncpy(temp, start, count);
-        temp[count] = '\0';
-        ptr = end + 1;
-
-        // conver temp to json object and save it to the list
-        json_object *jobj = json_tokener_parse(temp);
-        *kl_pushp(gram, grammar_list) = jobj;
-
-        // printf("%s\n", temp);
-    }
-}
 
 int parse_pattern(pcre2_code *replacer, pcre2_match_data *match_data, const char *str, size_t len, char *pattern)
 {
@@ -721,11 +817,84 @@ char *unescape_string(const char *input)
     return output;
 }
 
-void write_new_seeds(char *enriched_file, char *contents)
-{
+// Add these includes at the top of the file if they're not already present
+#include <stdlib.h>
+#include <sys/stat.h>
+
+// Add this function to extract and save sequences
+void extract_and_save_sequences(const char *llm_output, const char *output_dir) {
+    const char *start_tag = "<sequence>";
+    const char *end_tag = "</sequence>";
+    const char *ptr = llm_output;
+    int sequence_count = 0;
+
+    // Create the output directory if it doesn't exist
+    mkdir(output_dir, 0777);
+
+    while ((ptr = strstr(ptr, start_tag)) != NULL) {
+        ptr += strlen(start_tag);
+        const char *end = strstr(ptr, end_tag);
+        
+        if (end == NULL) {
+            break;
+        }
+
+        size_t len = end - ptr;
+        char *sequence = malloc(len + 1);
+        strncpy(sequence, ptr, len);
+        sequence[len] = '\0';
+
+        // Remove any whitespace from the sequence
+        char *cleaned_sequence = malloc(len + 1);
+        int j = 0;
+        for (int i = 0; i < len; i++) {
+            if (!isspace(sequence[i])) {
+                cleaned_sequence[j++] = sequence[i];
+            }
+        }
+        cleaned_sequence[j] = '\0';
+
+        // Create the output file
+        char filename[256];
+        snprintf(filename, sizeof(filename), "%s/sequence_%d.bin", output_dir, ++sequence_count);
+        FILE *fp = fopen(filename, "wb");
+        
+        if (fp == NULL) {
+            printf("Error creating file %s\n", filename);
+            free(sequence);
+            free(cleaned_sequence);
+            continue;
+        }
+
+        // Convert hex string to binary and write to file
+        for (int i = 0; i < strlen(cleaned_sequence); i += 2) {
+            char hex[3] = {cleaned_sequence[i], cleaned_sequence[i+1], '\0'};
+            int value = strtol(hex, NULL, 16);
+            fputc(value, fp);
+        }
+
+        fclose(fp);
+        free(sequence);
+        free(cleaned_sequence);
+
+        ptr = end + strlen(end_tag);
+    }
+}
+
+// Modify the write_new_seeds function to use extract_and_save_sequences
+void write_new_seeds(char *enriched_file, char *contents) {
+    // Create a directory for the extracted sequences
+    char *sequences_dir = NULL;
+    asprintf(&sequences_dir, "%s_sequences", enriched_file);
+
+    // Extract and save sequences
+    extract_and_save_sequences(contents, sequences_dir);
+
+    free(sequences_dir);
+
+    // Keep the original file writing logic
     FILE *fp = fopen(enriched_file, "w");
-    if (fp == NULL)
-    {
+    if (fp == NULL) {
         printf("Error in opening the file %s\n", enriched_file);
         exit(1);
     }
@@ -751,23 +920,6 @@ void write_new_seeds(char *enriched_file, char *contents)
     fclose(fp);
 }
 
-char *format_string(char *state_string)
-{
-    // remove the newline and whiltespace in the beginning of the string if any
-    while (state_string[0] == '\n' || state_string[0] == ' ' || state_string[0] == '\t' || state_string[0] == '\r')
-    {
-        state_string++;
-    }
-
-    int len = strlen(state_string);
-    while (state_string[len - 1] == '\n' || state_string[len - 1] == '\r' || state_string[len - 1] == ' ' || state_string[len - 1] == '.')
-    {
-        state_string[len - 1] = '\0';
-        len--;
-    }
-
-    return state_string;
-}
 
 /***
  * Get the protocol states based on self-consistency check
