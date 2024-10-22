@@ -612,8 +612,12 @@ void enrich_initial_seeds()
 {
   char *seed_question = NULL;
   const char *seedfile_path = in_dir;
-  //1. read the initial seeds from the seed file, and enrich them with LLM-generated messages
+  // 1. read the initial seeds from the seed file, and enrich them with LLM-generated messages
   char *seeds_prompt = construct_prompt_for_seeds(protocol_name, &seed_question, seedfile_path, rfc_path);
+  if (seeds_prompt == NULL) {
+    printf("Failed to retrieve seeds prompt\n");
+    return;
+  }
   char *seeds_answer = chat_with_llm(seeds_prompt, "gpt-4o-mini", GRAMMAR_RETRIES, 0.5);
   free(seeds_prompt);
   if(seeds_answer == NULL)
@@ -623,7 +627,7 @@ void enrich_initial_seeds()
   }
   printf("Seeds answer: %s\n", seeds_answer);
 
-  //2. get the grammars for the protocol and randomly generate valid values for the fields
+  // 2. get the grammars for the protocol and randomly generate valid values for the fields
   // Extract sequences from the LLM output
   int num_sequences = 0;
   char **sequences = extract_sequences(seeds_answer, &num_sequences);
@@ -10342,7 +10346,7 @@ int main(int argc, char **argv)
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:QN:D:W:w:e:P:KEq:s:RFc:l:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:r:f:m:t:T:dnCB:S:M:x:QN:D:W:w:e:P:KEq:s:RFc:l:")) > 0)
 
     switch (opt)
     {

@@ -15,7 +15,7 @@
 // -lcurl -ljson-c -lpcre2-8
 // apt install libcurl4-openssl-dev libjson-c-dev libpcre2-dev libpcre2-8-0
 
-#define MAX_TOKENS 2048   //....................????????????????????/////?
+#define MAX_TOKENS 16384   //....................????????????????????/////?
 #define CONFIDENT_TIMES 3
 
 struct MemoryStruct
@@ -56,6 +56,11 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
     char *content_header = "Content-Type: application/json";
     char *accept_header = "Accept: application/json";
     char *data = NULL;
+    if (prompt == NULL) {
+        printf("Error: prompt is NULL\n");
+        return NULL;
+    }
+
     asprintf(&data, "{\"model\": \"gpt-4o-mini\",\"messages\": %s, \"max_tokens\": %d, \"temperature\": %f}", prompt, MAX_TOKENS, temperature);
     curl_global_init(CURL_GLOBAL_DEFAULT);
     do
@@ -103,7 +108,17 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
                 else
                 {
                     printf("Error response is: %s\n", chunk.memory);
-                    sleep(2); // Sleep for a small amount of time to ensure that the service can recover
+
+                    // Print curl request data for debugging
+                    printf("Curl request data:\n");
+                    printf("URL: %s\n", url);
+                    printf("Headers:\n");
+                    printf("  %s\n", auth_header);
+                    printf("  %s\n", content_header);
+                    printf("  %s\n", accept_header);
+                    printf("Data: %s\n", data);
+
+                    sleep(10); // Sleep for a small amount of time to ensure that the service can recover
                 }
                 json_object_put(jobj); //free memory
             }
@@ -154,7 +169,7 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
     size_t file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     char *rfc_file_content = malloc(file_size + 1);
-    if(rfc_file_content == NULL){
+    if (rfc_file_content == NULL){
         printf("Error allocating memory for %s\n", rfc_path);
         fclose(fp);
         return NULL;
@@ -226,7 +241,23 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
 
     *final_msg = msg;
 
-    asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", msg);
+    char *escaped_msg = NULL;
+    asprintf(&escaped_msg, "%s", msg);
+    for (char *p = escaped_msg; *p; p++) {
+        if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t') {
+            memmove(p + 1, p, strlen(p) + 1);
+            *p++ = '\\';
+            switch (*p) {
+                case '"':  break;
+                case '\\': break;
+                case '\n': *p = 'n'; break;
+                case '\r': *p = 'r'; break;
+                case '\t': *p = 't'; break;
+            }
+        }
+    }
+    asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", escaped_msg);
+    free(escaped_msg);
 
     free(rfc_file_content);
     if (example_seeds[0]) free(example_seeds[0]);
