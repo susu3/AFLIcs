@@ -432,6 +432,7 @@ char *protocol_name;
 u32 reward_random;
 u32 reward_grammar;
 
+/*
 //get the grammars for the protocol from the LLM
 void setup_llm_grammars()
 {
@@ -496,6 +497,7 @@ void setup_llm_grammars()
     }
     kl_destroy_gram(grammar_list);
 
+  free_grammars_answer:
     free(combined_templates);
     free(remaining_templates);
 
@@ -540,8 +542,72 @@ void setup_llm_grammars()
   free(first_question);
   free(templates_prompt);
 }
+*/
 
-//read the initial seeds from the seed file, and enrich them with LLM-generated messages
+// extract the sequences from the LLM output
+// Function: extract_sequences
+// Parameters:
+//   - seeds_answer: the LLM output
+//   - num_sequences: the number of sequences extracted from the LLM output
+// Returns:
+//   - the sequences extracted from the LLM output
+char** extract_sequences(const char* seeds_answer, int* num_sequences) {
+    char** sequences = NULL;
+    *num_sequences = 0;
+    
+    const char* start_tag = "<sequence>";
+    const char* end_tag = "</sequence>";
+    const char* pos = seeds_answer;
+    
+    while ((pos = strstr(pos, start_tag)) != NULL) {
+        pos += strlen(start_tag);
+        const char* end = strstr(pos, end_tag);
+        if (end == NULL) break;
+        
+        size_t len = end - pos;
+        char* sequence = malloc(len + 1);
+        strncpy(sequence, pos, len);
+        sequence[len] = '\0';
+        
+        // Check if sequence is composed of only hex digits and spaces
+        int valid = 1;
+        for (size_t i = 0; i < len; i++) {
+            if (!isxdigit(sequence[i]) && !isspace(sequence[i])) {
+                valid = 0;
+                break;
+            }
+        }
+        
+        if (valid) {
+            // Reformat the sequence
+            char* reformatted = malloc(len + len/8 + 1); // Extra space for potential added spaces
+            size_t j = 0;
+            for (size_t i = 0; i < len; i++) {
+                if (isxdigit(sequence[i])) {
+                    reformatted[j++] = sequence[i];
+                    if ((j % 5 == 4) && (j < len)) {
+                        reformatted[j++] = ' ';
+                    }
+                }
+            }
+            reformatted[j] = '\0';
+            
+            (*num_sequences)++;
+            sequences = realloc(sequences, *num_sequences * sizeof(char*));
+            sequences[*num_sequences - 1] = reformatted;
+            
+            free(sequence);
+        } else {
+            free(sequence);
+        }
+        
+        pos = end + strlen(end_tag);
+    }
+    
+    return sequences;
+}
+
+// read the initial seeds from the seed file, and enrich them with LLM-generated messages
 void enrich_initial_seeds()
 {
   char *seed_question = NULL;
@@ -577,6 +643,12 @@ void enrich_initial_seeds()
   }
 }
 
+// write the sequences to the seed files
+// Function: write_sequences_to_seeds
+// Parameters:
+//   - seedfile_path: the path to the seed file
+//   - sequences: the sequences to be written to the seed file
+//   - num_sequences: the number of sequences to be written to the seed file
 void write_sequences_to_seeds(const char *seedfile_path, char **sequences, int num_sequences) {
   time_t t = time(NULL);
   struct tm *tm = localtime(&t);

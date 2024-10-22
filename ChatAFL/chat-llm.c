@@ -817,10 +817,6 @@ char *unescape_string(const char *input)
     return output;
 }
 
-// Add these includes at the top of the file if they're not already present
-#include <stdlib.h>
-#include <sys/stat.h>
-
 // Add this function to extract and save sequences
 void extract_and_save_sequences(const char *llm_output, const char *output_dir) {
     const char *start_tag = "<sequence>";
