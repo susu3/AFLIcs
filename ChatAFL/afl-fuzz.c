@@ -6973,6 +6973,7 @@ AFLNET_REGIONS_SELECTION:;
     count++;
   }
 
+  /*
   if (uninteresting_times >= UNINTERESTING_THRESHOLD && chat_times < CHATTING_THRESHOLD)
   {
     uninteresting_times = 0;
@@ -7119,9 +7120,8 @@ AFLNET_REGIONS_SELECTION:;
             // code diverges from abandon entry due to less allocations
             splicing_with = -1;
 
-            /* Update pending_not_fuzzed count if we made it through the calibration
-              cycle and have not seen this entry before. */
-
+            // Update pending_not_fuzzed count if we made it through the calibration cycle and have not seen this entry before. 
+            
             if (!stop_soon && !queue_cur->cal_failed && !queue_cur->was_fuzzed)
             {
               queue_cur->was_fuzzed = 1;
@@ -7152,7 +7152,7 @@ AFLNET_REGIONS_SELECTION:;
         // printf("Had empty prompt\n");
       }
     }
-  }
+  }*/
 
   /* Construct the buffer to be mutated and update out_buf */
   if (M2_prev == NULL)

@@ -6,15 +6,18 @@
 #include "khash.h"
 #include <json-c/json.h>
 
-/*
-There are 2048 tokens available, around 270 are used for the initial data for the stall prompt
-We give at most 400 for the examples and 1300 for the stall prompt
-Similarly 1700 is for the example request in the seed enrichment
-*/
+// Get the OpenAI token from the environment variable
+static inline const char* get_openai_token() {
+    const char* token = getenv("OPENAI_TOKEN");
+    if (!token) {
+        fprintf(stderr, "Error: OPENAI_TOKEN environment variable not set\n");
+        return NULL;
+    }
+    return token;
+}
+#define OPENAI_TOKEN get_openai_token()
 
-#define OPENAI_TOKEN "1"
-
-#define MAX_PROMPT_LENGTH 2048
+#define MAX_PROMPT_LENGTH 16384   //chat-llm.c中没有，afl-fuzz.c中也没有
 #define EXAMPLES_PROMPT_LENGTH 400
 #define HISTORY_PROMPT_LENGTH 1300
 #define EXAMPLE_SEQUENCE_PROMPT_LENGTH 1700
