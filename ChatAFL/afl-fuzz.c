@@ -660,25 +660,63 @@ void enrich_initial_seeds()
 //   - sequences: the sequences to be written to the seed file
 //   - num_sequences: the number of sequences to be written to the seed file
 void write_sequences_to_seeds(const char *seedfile_path, char **sequences, int num_sequences) {
+  if (!seedfile_path || !sequences || num_sequences <= 0) {
+    FATAL("Invalid arguments passed to write_sequences_to_seeds");
+    return;
+  }
+
   time_t t = time(NULL);
+  if (t == -1) {
+    PFATAL("Failed to get current time");
+  }
+
   struct tm *tm = localtime(&t);
-  char timestamp[15] = {0};
-  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", tm);
+  if (!tm) {
+    PFATAL("Failed to convert time to local time");
+  }
+
+  char timestamp[42] = {0};
+  if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%d-%H-%M-%S", tm) == 0) {
+    PFATAL("Failed to format timestamp string");
+  }
 
   for (int i = 0; i < num_sequences; i++) {
-    char *seed_filename = malloc(strlen(seedfile_path) + 30); // Allocate enough space for path, timestamp, number, and extension
-    sprintf(seed_filename, "%s/%s_%d", seedfile_path, timestamp, i + 1);
+    if (!sequences[i]) {
+      WARNF("Skipping NULL sequence at index %d", i);
+      continue;
+    }
+
+    size_t filename_size = strlen(seedfile_path) + strlen(timestamp) + 32;
+    char *seed_filename = malloc(filename_size);
+    if (!seed_filename) {
+      PFATAL("Failed to allocate memory for seed filename");
+    }
+
+    int ret = snprintf(seed_filename, filename_size, "%s/%s_%d", seedfile_path, timestamp, i + 1);
+    if (ret < 0 || ret >= (int)filename_size) {
+      free(seed_filename);
+      PFATAL("Failed to format seed filename");
+    }
 
     FILE *seed_file = fopen(seed_filename, "w");
     if (seed_file == NULL) {
-      PFATAL("Unable to create seed file: %s", seed_filename);
+      free(seed_filename);
+      PFATAL("Unable to create seed file '%s': %s", seed_filename, strerror(errno));
     }
 
-    if (fwrite(sequences[i], strlen(sequences[i]), 1, seed_file) != 1) {
-      PFATAL("Failed to write to seed file: %s", seed_filename);
+    size_t seq_len = strlen(sequences[i]);
+    size_t written = fwrite(sequences[i], 1, seq_len, seed_file);
+    if (written != seq_len) {
+      fclose(seed_file);
+      free(seed_filename);
+      PFATAL("Failed to write to seed file '%s': %s", seed_filename, strerror(errno));
     }
 
-    fclose(seed_file);
+    if (fclose(seed_file) != 0) {
+      free(seed_filename);
+      PFATAL("Failed to close seed file '%s': %s", seed_filename, strerror(errno));
+    }
+
     free(seed_filename);
   }
 }
