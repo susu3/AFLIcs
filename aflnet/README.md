@@ -29,6 +29,9 @@ year={2020},}
 sudo apt-get install clang
 # Install graphviz development
 sudo apt-get install graphviz-dev libcap-dev
+sudo apt-get install libcurl4-openssl-dev
+sudo apt-get install libjson-c-dev
+sudo apt-get install libpcre2-dev
 ```
 
 ## AFLNet
