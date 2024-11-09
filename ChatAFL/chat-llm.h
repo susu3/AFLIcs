@@ -6,16 +6,8 @@
 #include "khash.h"
 #include <json-c/json.h>
 
-// Get the OpenAI token from the environment variable
-static inline const char* get_openai_token() {
-    const char* token = getenv("OPENAI_TOKEN");
-    if (!token) {
-        fprintf(stderr, "Error: OPENAI_TOKEN environment variable not set\n");
-        return NULL;
-    }
-    return token;
-}
-#define OPENAI_TOKEN get_openai_token()
+// Function declaration
+const char* get_openai_token(void);
 
 #define MAX_PROMPT_LENGTH 16384   //chat-llm.c中没有，afl-fuzz.c中也没有
 #define EXAMPLES_PROMPT_LENGTH 400

@@ -12,6 +12,16 @@
 #include "alloc-inl.h"
 #include "hash.h"
 
+// Implementation of get_openai_token before it's used
+const char* get_openai_token(void) {
+    const char* token = getenv("OPENAI_TOKEN");
+    if (!token) {
+        fprintf(stderr, "Error: OPENAI_TOKEN environment variable not set\n");
+        return NULL;
+    }
+    return token;
+}
+
 // -lcurl -ljson-c -lpcre2-8
 // apt install libcurl4-openssl-dev libjson-c-dev libpcre2-dev libpcre2-8-0
 
@@ -52,7 +62,11 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
     CURLcode res = CURLE_OK;
     char *answer = NULL;
     char *url = "https://api.openai.com/v1/chat/completions";
-    char *auth_header = "Authorization: Bearer " OPENAI_TOKEN;
+    const char* token = get_openai_token();
+    if (!token) return NULL;
+
+    char *auth_header;
+    asprintf(&auth_header, "Authorization: Bearer %s", token);
     char *content_header = "Content-Type: application/json";
     char *accept_header = "Accept: application/json";
     char *data = NULL;
@@ -157,7 +171,6 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
 {   
     char *prompt_grammars = NULL;
     char *msg = NULL;
-    char *rfc_content = NULL;
 
     // Read RFC content
     FILE *fp = fopen(rfc_path, "r");
@@ -1072,17 +1085,17 @@ void make_combination(khash_t(strSet)* sequence, char** data , message_set_list*
         khash_t(strSet)* combination = kh_init(strSet);
         int absent;
         for (int j=0; j<size; j++){
-            kh_put(strSet,combination, data[j],&absent );
+            kh_put(strSet, combination, (char*)data[j], &absent);
         }
-        kv_push(khash_t(strSet)*,*res,combination);
+        kv_push(khash_t(strSet)*, *res, combination);
         return;
     }
     for (khiter_t i=st; i != end && end-i+1 >= size-index; i++)
     {
         if(!kh_exist(sequence,i))
             continue;
-        data[index] = kh_key(sequence,i);
-        make_combination(sequence, data,res, i+1, end, index+1, size);
+        data[index] = (char*)kh_key(sequence,i);
+        make_combination(sequence, data, res, i+1, end, index+1, size);
     }
 }
 
