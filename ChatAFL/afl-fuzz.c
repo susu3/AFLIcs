@@ -613,6 +613,10 @@ void enrich_initial_seeds()
   char *seed_question = NULL;
   const char *seedfile_path = in_dir;
   // 1. read the initial seeds from the seed file, and enrich them with LLM-generated messages
+  if (rfc_path == NULL) {
+    printf("RFC path is NULL, skipping LLM interaction\n");
+    return;
+  }
   char *seeds_prompt = construct_prompt_for_seeds(protocol_name, &seed_question, seedfile_path, rfc_path);
   if (seeds_prompt == NULL) {
     printf("Failed to retrieve seeds prompt\n");

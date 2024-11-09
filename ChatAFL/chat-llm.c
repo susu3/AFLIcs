@@ -167,6 +167,7 @@ char *chat_with_llm(char *prompt, int tries, float temperature)
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, chat_with_llm_helper);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 
+            printf("Sending request to OpenAI API\n");
             res = curl_easy_perform(curl);
 
             if (res == CURLE_OK)
@@ -235,6 +236,7 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
     char *prompt_grammars = NULL;
     char *msg = NULL;
     char *examples_str = NULL;
+    printf("Constructing prompt for seeds with RFC path: %s\n", rfc_path);
 
     // Read RFC content
     FILE *fp = fopen(rfc_path, "r");
