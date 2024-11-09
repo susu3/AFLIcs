@@ -616,6 +616,7 @@ void enrich_initial_seeds()
   char *seeds_prompt = construct_prompt_for_seeds(protocol_name, &seed_question, seedfile_path, rfc_path);
   if (seeds_prompt == NULL) {
     printf("Failed to retrieve seeds prompt\n");
+    FATAL("Failed to retrieve seeds prompt");
     return;
   }
   char *seeds_answer = chat_with_llm(seeds_prompt, "gpt-4o-mini", GRAMMAR_RETRIES, 0.5);
@@ -623,6 +624,7 @@ void enrich_initial_seeds()
   if(seeds_answer == NULL)
   {
     printf("Failed to get seeds from LLM\n");
+    FATAL("Failed to get seeds from LLM");
     return;
   }
   printf("Seeds answer: %s\n", seeds_answer);

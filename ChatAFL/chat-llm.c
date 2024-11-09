@@ -12,11 +12,11 @@
 #include "alloc-inl.h"
 #include "hash.h"
 
-// Implementation of get_openai_token before it's used
-const char* get_openai_token(void) {
-    const char* token = getenv("OPENAI_TOKEN");
+// Implementation of get_openai_api_key before it's used
+const char* get_openai_api_key(void) {
+    const char* token = getenv("OPENAI_API_KEY");
     if (!token) {
-        fprintf(stderr, "Error: OPENAI_TOKEN environment variable not set\n");
+        fprintf(stderr, "Error: OPENAI_API_KEY environment variable not set\n");
         return NULL;
     }
     return token;
@@ -62,16 +62,20 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
     CURLcode res = CURLE_OK;
     char *answer = NULL;
     char *url = "https://api.openai.com/v1/chat/completions";
-    const char* token = get_openai_token();
-    if (!token) return NULL;
+    const char* api_key = get_openai_api_key();
+    if (!api_key)
+    {
+        FATAL("Error: OPENAI_API_KEY environment variable not set");
+        return NULL;
+    }
 
     char *auth_header;
-    asprintf(&auth_header, "Authorization: Bearer %s", token);
+    asprintf(&auth_header, "Authorization: Bearer %s", api_key);
     char *content_header = "Content-Type: application/json";
     char *accept_header = "Accept: application/json";
     char *data = NULL;
     if (prompt == NULL) {
-        printf("Error: prompt is NULL\n");
+        FATAL("Error: prompt is NULL");
         return NULL;
     }
 
@@ -176,7 +180,7 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
     // Read RFC content
     FILE *fp = fopen(rfc_path, "r");
     if (fp == NULL){
-        printf("Error opening file %s\n", rfc_path);
+        FATAL("Error opening file %s", rfc_path);
         return NULL;
     }
     
@@ -195,7 +199,7 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
     // Allocate memory for RFC content
     char *rfc_file_content = malloc(file_size + 1);
     if (rfc_file_content == NULL){
-        printf("Error allocating memory for %s\n", rfc_path);
+        FATAL("Error allocating memory for %s", rfc_path);
         fclose(fp);
         return NULL;
     }
