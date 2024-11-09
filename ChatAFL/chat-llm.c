@@ -171,6 +171,7 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
 {   
     char *prompt_grammars = NULL;
     char *msg = NULL;
+    char *examples_str = NULL;
 
     // Read RFC content
     FILE *fp = fopen(rfc_path, "r");
@@ -178,49 +179,89 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
         printf("Error opening file %s\n", rfc_path);
         return NULL;
     }
-    fseek(fp, 0, SEEK_END);
-    size_t file_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+    
+    // Get file size safely
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long file_size = ftell(fp);
+    if (file_size == -1) {
+        fclose(fp);
+        return NULL;
+    }
+    rewind(fp);
+
+    // Allocate memory for RFC content
     char *rfc_file_content = malloc(file_size + 1);
     if (rfc_file_content == NULL){
         printf("Error allocating memory for %s\n", rfc_path);
         fclose(fp);
         return NULL;
     }
-    fread(rfc_file_content, 1, file_size, fp);
-    rfc_file_content[file_size] = '\0';
+
+    // Read file content
+    size_t bytes_read = fread(rfc_file_content, 1, file_size, fp);
     fclose(fp);
+    if (bytes_read != (size_t)file_size) {
+        free(rfc_file_content);
+        return NULL;
+    }
+    rfc_file_content[file_size] = '\0';
 
     // Load example seed files
     char *example_seeds[2] = {NULL, NULL};
     int example_count = 0;
-    DIR *dir;
-    struct dirent *ent;
-    if ((dir = opendir(seedfile_path)) != NULL) {
+    DIR *dir = opendir(seedfile_path);
+    if (dir != NULL) {
+        struct dirent *ent;
         while ((ent = readdir(dir)) != NULL && example_count < 2) {
             if (ent->d_type == DT_REG) {
-                char *file_path = malloc(strlen(seedfile_path) + strlen(ent->d_name) + 2);
-                sprintf(file_path, "%s/%s", seedfile_path, ent->d_name);
-                FILE *seed_file = fopen(file_path, "r");
-                if (seed_file != NULL) {
-                    fseek(seed_file, 0, SEEK_END);
-                    long seed_size = ftell(seed_file);
-                    fseek(seed_file, 0, SEEK_SET);
-                    example_seeds[example_count] = malloc(seed_size + 1);
-                    fread(example_seeds[example_count], 1, seed_size, seed_file);
-                    example_seeds[example_count][seed_size] = '\0';
-                    fclose(seed_file);
-                    example_count++;
+                char *file_path;
+                if (asprintf(&file_path, "%s/%s", seedfile_path, ent->d_name) == -1) {
+                    continue;
                 }
+                
+                FILE *seed_file = fopen(file_path, "r");
                 free(file_path);
+                
+                if (seed_file != NULL) {
+                    if (fseek(seed_file, 0, SEEK_END) == 0) {
+                        long seed_size = ftell(seed_file);
+                        if (seed_size > 0) {
+                            rewind(seed_file);
+                            example_seeds[example_count] = malloc(seed_size + 1);
+                            if (example_seeds[example_count] && 
+                                fread(example_seeds[example_count], 1, seed_size, seed_file) == (size_t)seed_size) {
+                                example_seeds[example_count][seed_size] = '\0';
+                                example_count++;
+                            } else {
+                                free(example_seeds[example_count]);
+                            }
+                        }
+                    }
+                    fclose(seed_file);
+                }
             }
         }
         closedir(dir);
     }
 
-    // Construct the prompt
-    const char *prompt_template =
-        "You are a fuzz test expert writing fuzz test cases for the %s protocol.\n"
+    // Construct examples string
+    if (example_count > 0) {
+        if (asprintf(&examples_str, "Here are some example seed files for the %s protocol:\n", protocol_name) == -1) {
+            examples_str = strdup("");
+        }
+    } else {
+        examples_str = strdup("");
+    }
+
+    if (examples_str == NULL) {
+        goto cleanup;
+    }
+
+    // Construct the final message
+    if (asprintf(&msg, "You are a fuzz test expert writing fuzz test cases for the %s protocol.\n"
         "For the %s protocol, refer to the specification document below, output as many different request sequences as possible.\n"
         "Wrap each request example with <sequence></sequence>. There should be one space after every 4 hex characters. Each output must be a valid request sequence. As a special note, the packet length field must match the actual length of the data.\n"
         "For the MODBUS protocol, a request sequence example is (in hex): <sequence>0000 0000 0008 FF16 0004 00F2 0025</sequence>\n"
@@ -229,52 +270,25 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
         "The Specification Document of %s protocol is as follows:\n"
         "=== BEGIN SPEC ===\n"
         "%s\n"
-        "=== END SPEC ===\n";
-
-    const char *example_template = "Example %d: <sequence>%s</sequence>\n";
-    
-    char *examples_str = NULL;
-    if (example_count > 0) {
-        asprintf(&examples_str, "Here are some example seed files for the %s protocol:\n", protocol_name);
-        for (int i = 0; i < example_count; i++) {
-            char *temp = examples_str;
-            asprintf(&examples_str, "%s%s", temp, example_template);
-            free(temp);
-        }
-    } else {
-        examples_str = strdup("");
+        "=== END SPEC ===\n",
+        protocol_name, protocol_name, examples_str, protocol_name, rfc_file_content) == -1) {
+        goto cleanup;
     }
-
-    asprintf(&msg, prompt_template, 
-        protocol_name, protocol_name,
-        examples_str,
-        protocol_name, rfc_file_content);
-
-    free(examples_str);
 
     *final_msg = msg;
 
-    char *escaped_msg = NULL;
-    asprintf(&escaped_msg, "%s", msg);
-    for (char *p = escaped_msg; *p; p++) {
-        if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r' || *p == '\t') {
-            memmove(p + 1, p, strlen(p) + 1);
-            *p++ = '\\';
-            switch (*p) {
-                case '"':  break;
-                case '\\': break;
-                case '\n': *p = 'n'; break;
-                case '\r': *p = 'r'; break;
-                case '\t': *p = 't'; break;
-            }
-        }
+    // Create the final prompt_grammars
+    if (asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", msg) == -1) {
+        prompt_grammars = NULL;
     }
-    asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", escaped_msg);
-    free(escaped_msg);
 
+cleanup:
+    // Cleanup
     free(rfc_file_content);
-    if (example_seeds[0]) free(example_seeds[0]);
-    if (example_seeds[1]) free(example_seeds[1]);
+    free(examples_str);
+    for (int i = 0; i < 2; i++) {
+        free(example_seeds[i]);
+    }
 
     return prompt_grammars;
 }
@@ -875,17 +889,16 @@ void extract_and_save_sequences(const char *llm_output, const char *output_dir) 
         ptr += strlen(start_tag);
         const char *end = strstr(ptr, end_tag);
         
-        if (end == NULL) {
-            break;
-        }
+        if (end == NULL) break;
 
         size_t len = end - ptr;
-        char *sequence = malloc(len + 1);
+        // Add extra space for null terminator
+        char *sequence = ck_alloc(len + 1);
         strncpy(sequence, ptr, len);
         sequence[len] = '\0';
 
-        // Remove any whitespace from the sequence
-        char *cleaned_sequence = malloc(len + 1);
+        // Use ck_alloc instead of malloc for consistency
+        char *cleaned_sequence = ck_alloc(len + 1);
         int j = 0;
         for (int i = 0; i < len; i++) {
             if (!isspace(sequence[i])) {
@@ -901,21 +914,22 @@ void extract_and_save_sequences(const char *llm_output, const char *output_dir) 
         
         if (fp == NULL) {
             printf("Error creating file %s\n", filename);
-            free(sequence);
-            free(cleaned_sequence);
+            ck_free(sequence);
+            ck_free(cleaned_sequence);
             continue;
         }
 
         // Convert hex string to binary and write to file
-        for (int i = 0; i < strlen(cleaned_sequence); i += 2) {
+        size_t clean_len = strlen(cleaned_sequence);
+        for (size_t i = 0; i < clean_len - 1; i += 2) {
             char hex[3] = {cleaned_sequence[i], cleaned_sequence[i+1], '\0'};
             int value = strtol(hex, NULL, 16);
             fputc(value, fp);
         }
 
         fclose(fp);
-        free(sequence);
-        free(cleaned_sequence);
+        ck_free(sequence);
+        ck_free(cleaned_sequence);
 
         ptr = end + strlen(end_tag);
     }
