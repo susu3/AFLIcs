@@ -12,6 +12,71 @@
 #include "alloc-inl.h"
 #include "hash.h"
 
+// Add this helper function at the top of the file
+static char* json_escape_string(const char* input) {
+    if (!input) return NULL;
+    
+    // First pass: calculate required space
+    size_t len = 0;
+    const char* p;
+    for (p = input; *p; p++) {
+        switch (*p) {
+            case '\\':
+            case '"':
+            case '\n':
+            case '\r':
+            case '\t':
+            case '\b':
+            case '\f':
+                len += 2;
+                break;
+            default:
+                len++;
+        }
+    }
+    
+    char* output = ck_alloc(len + 1);
+    char* out = output;
+    
+    // Second pass: escape characters
+    for (p = input; *p; p++) {
+        switch (*p) {
+            case '\\':
+                *out++ = '\\';
+                *out++ = '\\';
+                break;
+            case '"':
+                *out++ = '\\';
+                *out++ = '"';
+                break;
+            case '\n':
+                *out++ = '\\';
+                *out++ = 'n';
+                break;
+            case '\r':
+                *out++ = '\\';
+                *out++ = 'r';
+                break;
+            case '\t':
+                *out++ = '\\';
+                *out++ = 't';
+                break;
+            case '\b':
+                *out++ = '\\';
+                *out++ = 'b';
+                break;
+            case '\f':
+                *out++ = '\\';
+                *out++ = 'f';
+                break;
+            default:
+                *out++ = *p;
+        }
+    }
+    *out = '\0';
+    return output;
+}
+
 // Implementation of get_openai_api_key before it's used
 const char* get_openai_api_key(void) {
     const char* token = getenv("OPENAI_API_KEY");
@@ -56,7 +121,7 @@ static size_t chat_with_llm_helper(void *contents, size_t size, size_t nmemb, vo
 }
 
 //get the "content" from the curl response
-char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
+char *chat_with_llm(char *prompt, int tries, float temperature)
 {
     CURL *curl;
     CURLcode res = CURLE_OK;
@@ -125,24 +190,18 @@ char *chat_with_llm(char *prompt, char *model, int tries, float temperature)
                 }
                 else
                 {
-                    printf("Error response is: %s\n", chunk.memory);
-
-                    // Print curl request data for debugging
-                    printf("Curl request data:\n");
-                    printf("URL: %s\n", url);
-                    printf("Headers:\n");
-                    printf("  %s\n", auth_header);
-                    printf("  %s\n", content_header);
-                    printf("  %s\n", accept_header);
-                    printf("Data: %s\n", data);
-
-                    sleep(10); // Sleep for a small amount of time to ensure that the service can recover
+                    // Log request details
+                    fprintf(stderr, "OpenAI API error. Request details:\n");
+                    fprintf(stderr, "URL: %s\n", url);
+                    fprintf(stderr, "Headers:\n%s\n%s\n%s\n", auth_header, content_header, accept_header);
+                    fprintf(stderr, "Request body: %s\n", data);
+                    fprintf(stderr, "Response: %s\n", chunk.memory);
                 }
                 json_object_put(jobj); //free memory
             }
             else
             {
-                printf("Error: %s\n", curl_easy_strerror(res));
+                fprintf(stderr, "OpenAI API error: %s\n", curl_easy_strerror(res));
             }
 
             curl_slist_free_all(headers); 
@@ -281,10 +340,17 @@ char *construct_prompt_for_seeds(char *protocol_name, char **final_msg, char *se
 
     *final_msg = msg;
 
-    // Create the final prompt_grammars
-    if (asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", msg) == -1) {
+    // Create the final prompt_grammars with proper escaping
+    char* escaped_msg = json_escape_string(msg);
+    if (!escaped_msg) {
+        goto cleanup;
+    }
+    
+    if (asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", escaped_msg) == -1) {
         prompt_grammars = NULL;
     }
+    
+    ck_free(escaped_msg);
 
 cleanup:
     // Cleanup
@@ -302,12 +368,23 @@ char *construct_prompt_for_grammars(char *protocol_name, char **final_msg){
     char *prompt_format = "Desired format: field name <value ranges> | field name <value ranges> | ...";
 
     char *msg = NULL;
-    asprintf(&msg, "For the %s protocol, refer to the specification document, output protocol format and value range of each field, with fields separated by character '|'.\n%s", protocol_name, prompt_format);
+    if (asprintf(&msg, "For the %s protocol, refer to the specification document, output protocol format and value range of each field, with fields separated by character '|'.\n%s", 
+                protocol_name, prompt_format) == -1) {
+        return NULL;
+    }
     *final_msg = msg;
 
-    char *prompt_grammars = NULL;
-    asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", msg);
+    char *escaped_msg = json_escape_string(msg);
+    if (!escaped_msg) {
+        return NULL;
+    }
 
+    char *prompt_grammars = NULL;
+    if (asprintf(&prompt_grammars, "[{\"role\": \"user\", \"content\": \"%s\"}]", escaped_msg) == -1) {
+        prompt_grammars = NULL;
+    }
+    
+    ck_free(escaped_msg);
     return prompt_grammars;
 }
 
@@ -989,7 +1066,7 @@ void get_protocol_message_types(char *state_prompt, khash_t(strSet) * states_set
 
     for (int i = 0; i < CONFIDENT_TIMES; i++)
     {
-        char *state_answer = chat_with_llm(state_prompt, "instruct", MESSAGE_TYPE_RETRIES, 0.5);
+        char *state_answer = chat_with_llm(state_prompt, MESSAGE_TYPE_RETRIES, 0.5);
         if (state_answer == NULL)
             continue;
         // printf("## Answer from LLM:\n %s\n", state_answer);
@@ -1161,22 +1238,19 @@ char *enrich_sequence(char *sequence, khash_t(strSet) * missing_message_types)
 
     char *prompt = NULL;
 
-    json_object *sequence_escaped = json_object_new_string(sequence);
-    const char *sequence_escaped_str = json_object_to_json_string(sequence_escaped);
-    sequence_escaped_str++;
-
-    int sequence_len = strlen(sequence_escaped_str) - 1;
-    int allowed_tokens = (MAX_TOKENS - strlen(prompt_template) - missing_fields_len);
-    if (sequence_len > allowed_tokens)
-    {
-        sequence_len = allowed_tokens;
+    char *escaped_sequence = json_escape_string(sequence);
+    if (!escaped_sequence) {
+        return NULL;
     }
-    asprintf(&prompt, prompt_template, sequence_len, sequence_escaped_str, missing_fields_len, missing_fields_seq);
+
+    asprintf(&prompt, prompt_template, 
+             strlen(escaped_sequence), escaped_sequence, 
+             missing_fields_len, missing_fields_seq);
+             
+    ck_free(escaped_sequence);
     ck_free(missing_fields_seq);
-    json_object_put(sequence_escaped);
 
-    char *response = chat_with_llm(prompt, "instruct", ENRICHMENT_RETRIES, 0.5);
-
+    char *response = chat_with_llm(prompt, ENRICHMENT_RETRIES, 0.5);
     free(prompt);
 
     return response;

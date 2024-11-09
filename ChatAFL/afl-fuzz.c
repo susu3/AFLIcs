@@ -619,7 +619,7 @@ void enrich_initial_seeds()
     FATAL("Failed to retrieve seeds prompt");
     return;
   }
-  char *seeds_answer = chat_with_llm(seeds_prompt, "gpt-4o-mini", GRAMMAR_RETRIES, 0.5);
+  char *seeds_answer = chat_with_llm(seeds_prompt, GRAMMAR_RETRIES, 0.5);
   free(seeds_prompt);
   if(seeds_answer == NULL)
   {
