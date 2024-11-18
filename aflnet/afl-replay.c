@@ -50,17 +50,11 @@ int main(int argc, char* argv[])
     PFATAL("Usage: ./afl-replay packet_file protocol port [first_resp_timeout(us) [follow-up_resp_timeout(ms)]]");
   }
 
-  if (!strcmp(argv[2], "RTSP")) extract_response_codes = &extract_response_codes_rtsp;
-  else if (!strcmp(argv[2], "FTP")) extract_response_codes = &extract_response_codes_ftp;
-  else if (!strcmp(argv[2], "DNS")) extract_response_codes = &extract_response_codes_dns;
-  else if (!strcmp(argv[2], "DTLS12")) extract_response_codes = &extract_response_codes_dtls12;
-  else if (!strcmp(argv[2], "DICOM")) extract_response_codes = &extract_response_codes_dicom;
-  else if (!strcmp(argv[2], "SMTP")) extract_response_codes = &extract_response_codes_smtp;
-  else if (!strcmp(argv[2], "SSH")) extract_response_codes = &extract_response_codes_ssh;
-  else if (!strcmp(argv[2], "TLS")) extract_response_codes = &extract_response_codes_tls;
-  else if (!strcmp(argv[2], "SIP")) extract_response_codes = &extract_response_codes_sip;
-  else if (!strcmp(argv[2], "HTTP")) extract_response_codes = &extract_response_codes_http;
-  else if (!strcmp(argv[2], "IPP")) extract_response_codes = &extract_response_codes_ipp;
+  if (!strcmp(argv[2], "ETHERNETIP")) extract_response_codes = &extract_response_codes_ethernetip;
+  else if (!strcmp(argv[2], "MODBUS")) extract_response_codes = &extract_response_codes_modbus;
+  else if (!strcmp(argv[2], "IEC104")) extract_response_codes = &extract_response_codes_iec104;
+  else if (!strcmp(argv[2], "SLMPA")) extract_response_codes = &extract_response_codes_slmpa;
+  else if (!strcmp(argv[2], "SLMPB")) extract_response_codes = &extract_response_codes_slmpb;
   else {fprintf(stderr, "[AFL-replay] Protocol %s has not been supported yet!\n", argv[2]); exit(1);}
 
   portno = atoi(argv[3]);

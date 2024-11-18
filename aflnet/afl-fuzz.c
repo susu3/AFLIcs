@@ -8102,7 +8102,7 @@ static void usage(u8* argv0) {
        "Settings for network protocol fuzzing (AFLNet):\n\n"
 
        "  -N netinfo    - server information (e.g., tcp://127.0.0.1/8554)\n"
-       "  -P protocol   - application protocol to be tested (e.g., RTSP, FTP, DTLS12, DNS, SMTP, SSH, TLS)\n"
+       "  -P protocol   - application protocol to be tested (e.g., MODBUS, IEC104, EthernetIP, SLMPA(ASCII), SLMPB(Binary))\n"
        "  -D usec       - waiting time (in micro seconds) for the server to initialize\n"
        "  -W msec       - waiting time (in miliseconds) for receiving the first response to each input sent\n"
        "  -w usec       - waiting time (in micro seconds) for receiving follow-up responses\n"
@@ -9043,39 +9043,21 @@ int main(int argc, char** argv) {
       case 'P': /* protocol to be tested */
         if (protocol_selected) FATAL("Multiple -P options not supported");
 
-        if (!strcmp(optarg, "RTSP")) {
-          extract_requests = &extract_requests_rtsp;
-          extract_response_codes = &extract_response_codes_rtsp;
-        } else if (!strcmp(optarg, "FTP")) {
-          extract_requests = &extract_requests_ftp;
-          extract_response_codes = &extract_response_codes_ftp;
-        } else if (!strcmp(optarg, "DTLS12")) {
-          extract_requests = &extract_requests_dtls12;
-          extract_response_codes = &extract_response_codes_dtls12;
-        } else if (!strcmp(optarg, "DNS")) {
-          extract_requests = &extract_requests_dns;
-          extract_response_codes = &extract_response_codes_dns;
-        } else if (!strcmp(optarg, "DICOM")) {
-          extract_requests = &extract_requests_dicom;
-          extract_response_codes = &extract_response_codes_dicom;
-        } else if (!strcmp(optarg, "SMTP")) {
-          extract_requests = &extract_requests_smtp;
-          extract_response_codes = &extract_response_codes_smtp;
-        } else if (!strcmp(optarg, "SSH")) {
-          extract_requests = &extract_requests_ssh;
-          extract_response_codes = &extract_response_codes_ssh;
-        } else if (!strcmp(optarg, "TLS")) {
-          extract_requests = &extract_requests_tls;
-          extract_response_codes = &extract_response_codes_tls;
-        } else if (!strcmp(optarg, "SIP")) {
-          extract_requests = &extract_requests_sip;
-          extract_response_codes = &extract_response_codes_sip;
-        } else if (!strcmp(optarg, "HTTP")) {
-          extract_requests = &extract_requests_http;
-          extract_response_codes = &extract_response_codes_http;
-        } else if (!strcmp(optarg, "IPP")) {
-          extract_requests = &extract_requests_ipp;
-          extract_response_codes = &extract_response_codes_ipp;
+        if (!strcmp(optarg, "ETHERNETIP")) {
+          extract_requests = &extract_requests_ethernetip;
+          extract_response_codes = &extract_response_codes_ethernetip;
+        } else if (!strcmp(optarg, "MODBUS")) {
+          extract_requests = &extract_requests_modbus;
+          extract_response_codes = &extract_response_codes_modbus;
+        } else if (!strcmp(optarg, "IEC104")) {
+          extract_requests = &extract_requests_iec104;
+          extract_response_codes = &extract_response_codes_iec104;
+        } else if (!strcmp(optarg, "SLMPA")) {
+          extract_requests = &extract_requests_slmpa;
+          extract_response_codes = &extract_response_codes_slmpa;
+        } else if (!strcmp(optarg, "SLMPB")) {
+          extract_requests = &extract_requests_slmpb;
+          extract_response_codes = &extract_response_codes_slmpb;
         } else {
           FATAL("%s protocol is not supported yet!", optarg);
         }
