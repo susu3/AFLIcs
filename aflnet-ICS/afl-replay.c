@@ -55,6 +55,7 @@ int main(int argc, char* argv[])
   else if (!strcmp(argv[2], "IEC104")) extract_response_codes = &extract_response_codes_iec104;
   else if (!strcmp(argv[2], "SLMPA")) extract_response_codes = &extract_response_codes_slmpa;
   else if (!strcmp(argv[2], "SLMPB")) extract_response_codes = &extract_response_codes_slmpb;
+  else if (!strcmp(argv[2], "OPCUACP")) extract_response_codes = &extract_response_codes_opcuacp;
   else {fprintf(stderr, "[AFL-replay] Protocol %s has not been supported yet!\n", argv[2]); exit(1);}
 
   portno = atoi(argv[3]);

@@ -398,7 +398,87 @@ region_t *extract_request_slmpb(unsigned char* buf, unsigned int buf_size, unsig
 
 }
 
+//OPC UA Connection Protocol
+region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+  unsigned char* end_ptr = buf + buf_size;
+  unsigned char* cur_ptr = buf;
+  unsigned int cur = 0;
+  unsigned int region_count = 0;
+  unsigned int remaining_buf = 0;
+  unsigned long length = 0;
 
+  const char* messagetype[]={
+    0x4D5347, // "MSG"
+    0x4F504E, // "OPN" 
+    0x434C4F,  // "CLO"
+    0x48454C,  // "HEL"
+    0x455252,  // "ERR"
+    0x41434B,  // "ACK"
+    0x524845,  // "RHE"
+  }
+
+  region_t* regions = NULL;
+  if (buf == NULL || buf_size == 0) {
+    *region_count_ref = region_count;
+    return regions;
+  }
+
+  // Buffer to hold 3 bytes plus null terminator
+  unsigned char msg_type[4] = {0};
+  int flag = 0; //0: not found; 1: found
+
+  while (cur_ptr <= end_ptr - 8) { 
+    remaining_buf = end_ptr - cur_ptr;
+    flag = 0;
+
+    memcpy(msg_type, cur_ptr, 3);
+    msg_type[3] = '\0';
+
+    for(int i = 0; i < 7; i++){
+      if(strncmp((char*)msg_type, messagetype[i], 3) == 0){
+        flag = 1;
+        break;
+      }
+    }
+
+    if(flag == 0){
+      cur_ptr++;
+      cur++;
+      continue;
+    }
+
+    region_count++;
+    regions = (region_t *)ck_realloc(regions, region_count * sizeof(region_t));
+    regions[region_count - 1].start_byte = cur;
+    regions[region_count - 1].state_sequence = NULL;
+    regions[region_count - 1].state_count = 0;
+        
+    // Extract length from bytes 4-7 (little-endian)
+    length = (cur_ptr[7] << 24) | (cur_ptr[6] << 16) | (cur_ptr[5] << 8) | cur_ptr[4];
+
+    if (remaining_buf >= length) {
+      regions[region_count - 1].end_byte = cur + length - 1;
+      cur = cur + length;
+      cur_ptr = cur_ptr + length;
+    } else {
+      regions[region_count - 1].end_byte = buf_size - 1;
+      break;
+    }
+  }
+
+  // In case region_count equals zero, create one region for the whole buffer
+  if ((region_count == 0) && (buf_size > 0)) {
+    regions = (region_t *)ck_realloc(regions, sizeof(region_t));
+    regions[0].start_byte = 0;
+    regions[0].end_byte = buf_size - 1;
+    regions[0].state_sequence = NULL;
+    regions[0].state_count = 0;
+    region_count = 1;
+  }
+
+  *region_count_ref = region_count;
+  return regions;
+}
 
 //same as extract request
 //buf: response data; state_count_ref: 
@@ -763,6 +843,79 @@ unsigned int *extract_response_codes_slmpb(unsigned char *buf, unsigned int buf_
     } else {
       break;
     }
+  }
+
+  *state_count_ref = state_count;
+  return state_sequence;
+}
+
+//OPC UA Connection Protocol
+unsigned int *extract_response_codes_opcuacp(unsigned char *buf, unsigned int buf_size, unsigned int *state_count_ref) {
+  unsigned char *cur_ptr = buf;
+  unsigned char *end_ptr = buf + buf_size;
+  unsigned int *state_sequence = NULL;
+  unsigned int state_count = 0;
+  unsigned int remaining_buf = 0;
+  unsigned long length = 0;
+  unsigned int message_code = 0;
+
+  state_count++;
+  state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+  state_sequence[state_count - 1] = 0;
+
+  if (buf == NULL || buf_size == 0) {
+    *state_count_ref = state_count;
+    return state_sequence;
+  }
+
+  const char* messagetype[]={
+    0x4D5347, // "MSG"
+    0x4F504E, // "OPN" 
+    0x434C4F,  // "CLO"
+    0x48454C,  // "HEL"
+    0x455252,  // "ERR"
+    0x41434B,  // "ACK"
+    0x524845,  // "RHE"
+  }
+
+  unsigned char msg_type[4] = {0};
+  int flag = 0; //0: not found; 1: found
+
+  while (cur_ptr <= end_ptr - 8) { 
+
+    remaining_buf = end_ptr - cur_ptr;
+    flag = 0;
+
+    memcpy(msg_type, cur_ptr, 3);
+    msg_type[3] = '\0';
+
+    for(int i = 0; i < 7; i++){
+      if(strncmp((char*)msg_type, messagetype[i], 3) == 0){
+        flag = 1;
+        message_code = messagetype[i];
+        break;
+      }
+    }
+
+    if(flag == 0){
+      cur_ptr++;
+      continue;
+    }
+
+    // Extract length from bytes 4-7 (little-endian)
+    length = (cur_ptr[7] << 24) | (cur_ptr[6] << 16) | (cur_ptr[5] << 8) | cur_ptr[4];
+
+    if(message_code == 0x0455252 && length >= 12){  //message code = ERR
+      unsigned int error_code[4];
+      memcpy(error_code, cur_ptr+8, 4);
+      message_code = error_code;
+    }
+
+    state_count++;
+    state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+    state_sequence[state_count - 1] = message_code;
+
+    cur_ptr = cur_ptr + length;
   }
 
   *state_count_ref = state_count;

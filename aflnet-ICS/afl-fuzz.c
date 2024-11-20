@@ -8102,7 +8102,7 @@ static void usage(u8* argv0) {
        "Settings for network protocol fuzzing (AFLNet):\n\n"
 
        "  -N netinfo    - server information (e.g., tcp://127.0.0.1/8554)\n"
-       "  -P protocol   - application protocol to be tested (e.g., MODBUS, IEC104, EthernetIP, SLMPA(ASCII), SLMPB(Binary))\n"
+       "  -P protocol   - application protocol to be tested (e.g., MODBUS, IEC104, EthernetIP, SLMPA(ASCII), SLMPB(Binary), OPC UACP)\n"
        "  -D usec       - waiting time (in micro seconds) for the server to initialize\n"
        "  -W msec       - waiting time (in miliseconds) for receiving the first response to each input sent\n"
        "  -w usec       - waiting time (in micro seconds) for receiving follow-up responses\n"
@@ -9058,6 +9058,9 @@ int main(int argc, char** argv) {
         } else if (!strcmp(optarg, "SLMPB")) {
           extract_requests = &extract_requests_slmpb;
           extract_response_codes = &extract_response_codes_slmpb;
+        } else if (!strcmp(optarg, "OPCUACP")) {
+          extract_requests = &extract_requests_opcuacp;
+          extract_response_codes = &extract_response_codes_opcuacp;
         } else {
           FATAL("%s protocol is not supported yet!", optarg);
         }
