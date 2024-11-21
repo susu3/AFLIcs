@@ -407,15 +407,15 @@ region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, uns
   unsigned int remaining_buf = 0;
   unsigned long length = 0;
 
-  const char* messagetype[]={
-    0x4D5347, // "MSG"
-    0x4F504E, // "OPN" 
-    0x434C4F,  // "CLO"
-    0x48454C,  // "HEL"
-    0x455252,  // "ERR"
-    0x41434B,  // "ACK"
-    0x524845,  // "RHE"
-  }
+  const char* messagetype[] = {
+    "MSG",
+    "OPN", 
+    "CLO",
+    "HEL",
+    "ERR",
+    "ACK",
+    "RHE"
+  };
 
   region_t* regions = NULL;
   if (buf == NULL || buf_size == 0) {
@@ -424,7 +424,7 @@ region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, uns
   }
 
   // Buffer to hold 3 bytes plus null terminator
-  unsigned char msg_type[4] = {0};
+  char msg_type[4] = {0};
   int flag = 0; //0: not found; 1: found
 
   while (cur_ptr <= end_ptr - 8) { 
@@ -434,8 +434,8 @@ region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, uns
     memcpy(msg_type, cur_ptr, 3);
     msg_type[3] = '\0';
 
-    for(int i = 0; i < 7; i++){
-      if(strncmp((char*)msg_type, messagetype[i], 3) == 0){
+    for (int i = 0; i < sizeof(messagetype)/sizeof(messagetype[0]); i++) {
+      if (strncmp(msg_type, messagetype[i], 3) == 0) {
         flag = 1;
         break;
       }
@@ -869,16 +869,16 @@ unsigned int *extract_response_codes_opcuacp(unsigned char *buf, unsigned int bu
   }
 
   const char* messagetype[]={
-    0x4D5347, // "MSG"
-    0x4F504E, // "OPN" 
-    0x434C4F,  // "CLO"
-    0x48454C,  // "HEL"
-    0x455252,  // "ERR"
-    0x41434B,  // "ACK"
-    0x524845,  // "RHE"
-  }
+    "MSG",
+    "OPN", 
+    "CLO",
+    "HEL",
+    "ERR",
+    "ACK",
+    "RHE",
+  };
 
-  unsigned char msg_type[4] = {0};
+  char msg_type[4] = {0};
   int flag = 0; //0: not found; 1: found
 
   while (cur_ptr <= end_ptr - 8) { 
@@ -888,11 +888,11 @@ unsigned int *extract_response_codes_opcuacp(unsigned char *buf, unsigned int bu
 
     memcpy(msg_type, cur_ptr, 3);
     msg_type[3] = '\0';
-
-    for(int i = 0; i < 7; i++){
-      if(strncmp((char*)msg_type, messagetype[i], 3) == 0){
+    for (int i = 0; i < sizeof(messagetype) / sizeof(messagetype[0]); i++) {
+      if (strncmp(msg_type, messagetype[i], 3) == 0) {
         flag = 1;
-        message_code = messagetype[i];
+        // Convert 3 chars to integer by treating as 24-bit number
+        message_code = (messagetype[i][0] << 16) | (messagetype[i][1] << 8) | messagetype[i][2];
         break;
       }
     }
@@ -904,10 +904,9 @@ unsigned int *extract_response_codes_opcuacp(unsigned char *buf, unsigned int bu
 
     // Extract length from bytes 4-7 (little-endian)
     length = (cur_ptr[7] << 24) | (cur_ptr[6] << 16) | (cur_ptr[5] << 8) | cur_ptr[4];
-
-    if(message_code == 0x0455252 && length >= 12){  //message code = ERR
-      unsigned int error_code[4];
-      memcpy(error_code, cur_ptr+8, 4);
+    if (message_code == ('E' << 16 | 'R' << 8 | 'R') && length >= 12) {  //message code = ERR
+      unsigned int error_code;
+      memcpy(&error_code, cur_ptr+8, 4);
       message_code = error_code;
     }
 
