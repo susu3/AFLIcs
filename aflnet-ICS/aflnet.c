@@ -480,6 +480,90 @@ region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, uns
   return regions;
 }
 
+region_t *extract_request_dnp3(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+  unsigned char *end_ptr = buf + buf_size;
+  unsigned char *cur_ptr = buf;
+  unsigned int cur = 0;
+  unsigned int region_count = 0;
+  unsigned int remaining_buf = 0;
+  unsigned short length = 0;
+  unsigned short data_field_number = 0;
+  unsigned short remaining_data = 0;
+  unsigned short message_length = 0;
+
+  region_t *regions = NULL;
+  unsigned char start_byte[] = {0x05, 0x64};
+
+  if (buf == NULL || buf_size == 0) {
+    *region_count_ref = region_count;
+    return regions;
+  }
+
+  while (cur_ptr < end_ptr) { 
+
+    remaining_buf = end_ptr - cur_ptr;
+
+    if(remaining_buf < 2 || memcmp(cur_ptr, start_byte, 2) != 0){
+      cur_ptr++;
+      cur++;
+      continue;
+    }
+
+    // Check if enough bytes for minimum DNP3 header 
+    if (remaining_buf >= 8) {
+
+      length = cur_ptr[2];   //length is in bytes 3-4
+      if(length < 5){
+        cur_ptr++;
+        cur++;
+        continue;
+      }
+
+      data_field_number = (length - 5)/16;
+      remaining_data = length - 5 - data_field_number*16;
+      message_length = 2 + length + 2 + data_field_number*2 + (remaining_data > 0 ? 2 : 0);
+
+      region_count++;
+      regions = (region_t *)ck_realloc(regions, region_count * sizeof(region_t));
+      regions[region_count - 1].start_byte = cur;
+      regions[region_count - 1].state_sequence = NULL;
+      regions[region_count - 1].state_count = 0;
+    
+      if (remaining_buf >= message_length) {
+        regions[region_count - 1].end_byte = cur + message_length - 1;
+        cur = cur + message_length;
+        cur_ptr = cur_ptr + message_length;
+      } else {
+        regions[region_count - 1].end_byte = buf_size - 1;
+        break;
+      }
+    } else {
+      // Buffer too small, create one region for whole buffer
+      region_count++;
+      regions = (region_t *)ck_realloc(regions, region_count * sizeof(region_t));
+      regions[region_count - 1].start_byte = cur;
+      regions[region_count - 1].end_byte = cur + remaining_buf - 1;
+      regions[region_count - 1].state_sequence = NULL;
+      regions[region_count - 1].state_count = 0;
+      break;
+    }
+  }
+
+  // In case region_count equals zero, create one region for the whole buffer
+  if ((region_count == 0) && (buf_size > 0)) {
+    regions = (region_t *)ck_realloc(regions, sizeof(region_t));
+    regions[0].start_byte = 0;
+    regions[0].end_byte = buf_size - 1;
+    regions[0].state_sequence = NULL;
+    regions[0].state_count = 0;
+    region_count = 1;
+  }
+
+  *region_count_ref = region_count;
+  return regions;
+}
+
+
 //same as extract request
 //buf: response data; state_count_ref: 
 unsigned int* extract_response_codes_modbus(unsigned char* buf, unsigned int buf_size, unsigned int* state_count_ref)
@@ -915,6 +999,68 @@ unsigned int *extract_response_codes_opcuacp(unsigned char *buf, unsigned int bu
     state_sequence[state_count - 1] = message_code;
 
     cur_ptr = cur_ptr + length;
+  }
+
+  *state_count_ref = state_count;
+  return state_sequence;
+}
+
+unsigned int *extract_response_codes_dnp3(unsigned char *buf, unsigned int buf_size, unsigned int *state_count_ref) {
+  unsigned char *cur_ptr = buf;
+  unsigned char *end_ptr = buf + buf_size;
+  unsigned int *state_sequence = NULL;
+  unsigned int state_count = 0;
+  unsigned short length = 0;
+  unsigned int remaining_buf = 0;
+  unsigned int message_code;
+  unsigned char start_byte[] = {0x05, 0x64};
+  unsigned short data_field_number = 0;
+  unsigned short remaining_data = 0;
+  unsigned int message_length = 0;
+
+  state_count++;
+  state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+  state_sequence[state_count - 1] = 0;
+
+  //state_count++;
+  //state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+  //state_sequence[state_count - 1] = UINT_MAX; // state including 0
+
+  if (buf == NULL || buf_size == 0) {
+    *state_count_ref = state_count;
+    return state_sequence;
+  }
+
+  while (cur_ptr < end_ptr) {
+    remaining_buf = end_ptr - cur_ptr;
+
+    if(remaining_buf < 2 || memcmp(cur_ptr, start_byte, 2) != 0){
+      cur_ptr++;
+      continue;
+    }
+
+    // Check if enough bytes for minimum DNP3 header 
+    if (remaining_buf >= 8) {
+      length = cur_ptr[2];   //length is in bytes 3-4
+      if(length < 5){
+        cur_ptr++;
+        continue;
+      }
+
+      message_code = cur_ptr[3];
+
+      data_field_number = (length - 5)/16;
+      remaining_data = length - 5 - data_field_number*16;
+      message_length = 2 + length + 2 + data_field_number*2 + (remaining_data > 0 ? 2 : 0);
+    
+      state_count++;
+      state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+      state_sequence[state_count - 1] = message_code;
+
+      cur_ptr = cur_ptr + message_length;
+    }else{
+      break;
+    }
   }
 
   *state_count_ref = state_count;
