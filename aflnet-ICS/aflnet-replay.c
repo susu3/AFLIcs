@@ -43,6 +43,7 @@ int main(int argc, char* argv[])
   else if (!strcmp(argv[2], "SLMPB")) extract_response_codes = &extract_response_codes_slmpb;
   else if (!strcmp(argv[2], "OPCUACP")) extract_response_codes = &extract_response_codes_opcuacp;
   else if (!strcmp(argv[2], "DNP3")) extract_response_codes = &extract_response_codes_dnp3;
+  else if (!strcmp(argv[2], "BACNETIP")) extract_response_codes = &extract_response_codes_bacnetip;
   else {fprintf(stderr, "[AFLNet-replay] Protocol %s has not been supported yet!\n", argv[2]); exit(1);}
 
   portno = atoi(argv[3]);

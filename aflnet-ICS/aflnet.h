@@ -65,6 +65,7 @@ unsigned int* extract_response_codes_slmpa(unsigned char* buf, unsigned int buf_
 unsigned int* extract_response_codes_slmpb(unsigned char* buf, unsigned int buf_size, unsigned int* state_count_ref);
 unsigned int* extract_response_codes_opcuacp(unsigned char* buf, unsigned int buf_size, unsigned int* state_count_ref);
 unsigned int* extract_response_codes_dnp3(unsigned char* buf, unsigned int buf_size, unsigned int* state_count_ref);
+unsigned int* extract_response_codes_bacnetip(unsigned char* buf, unsigned int buf_size, unsigned int* state_count_ref);
 extern unsigned int* (*extract_response_codes)(unsigned char* buf, unsigned int buf_size, unsigned int* state_count_ref);
 
 region_t* extract_requests_modbus(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref);
@@ -74,6 +75,7 @@ region_t* extract_requests_slmpa(unsigned char* buf, unsigned int buf_size, unsi
 region_t* extract_requests_slmpb(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref);
 region_t* extract_requests_opcuacp(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref);
 region_t* extract_requests_dnp3(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref);
+region_t* extract_requests_bacnetip(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref);
 extern region_t* (*extract_requests)(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref);
 
 // Network communication functions

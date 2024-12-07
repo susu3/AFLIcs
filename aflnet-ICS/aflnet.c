@@ -563,6 +563,138 @@ region_t *extract_request_dnp3(unsigned char* buf, unsigned int buf_size, unsign
   return regions;
 }
 
+//BACnet/IP: compute length of message
+//buf: point to the start byte 0x81 of the message
+/*
+unsigned short compute_length_bacnetip(unsigned char* buf, unsigned int buf_size){
+  unsigned short length = 0;
+  unsigned char* cur_ptr = buf;
+  unsigned char* end_ptr = buf + buf_size;
+  unsigned short bvlc_length = 0;
+  unsigned short npci_length = 0;
+  unsigned short apdu_length = 0;
+  unsigned short remaining_buf = 0;
+  unsigned short control_field = 0;
+
+  if(buf == NULL || buf_size == 0)
+    return length;
+
+  remaining_buf = end_ptr - cur_ptr;
+
+  if(*cur_ptr == 0x81){
+    if(remaining_buf >= 4){
+      //compute bvlc length
+      bvlc_length = (cur_ptr[2] << 8) | cur_ptr[3];
+      if(remaining_buf >= bvlc_length){
+        length = length + bvlc_length;
+        cur_ptr = cur_ptr + bvlc_length;
+      }else{
+        length = remaining_buf;
+        return length;
+      }
+      //compute npci length
+      if(remaining_buf >= length +2){
+        npci_length = 2;
+        cur_ptr = cur_ptr + 1;
+        control_field = cur_ptr[0];
+
+        if(control_field & 00100000 == 00100000){
+          //DNET, DLEN, and Hop Count present, DLEN specifies length of DADR field
+          npci_length = npci_length + 3; 
+          if(cur_ptr + 3 < end_ptr){
+            cur_ptr = cur_ptr + 3;
+
+          }else{
+            length = remaining_buf;
+            return length;
+          }
+
+          cur_ptr = cur_ptr + 3;
+        }else{
+          npci_length = npci_length + 0; //DNET, DLEN, DADR, and Hop Count absent
+        } 
+
+        if(control_field & 10000000 == 10000000){
+          npci_length = npci_length + 1; //message type field is present
+        }else{
+          npci_length = npci_length + 0; //message type field is absent
+        }
+        
+      }else{
+        length = remaining_buf;
+        return length;
+      }
+
+    }
+  }else{
+    length = 0;
+  }
+
+  return length;
+}*/
+
+region_t *extract_request_bacnetip(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+  unsigned char *end_ptr = buf + buf_size;
+  unsigned char *cur_ptr = buf;
+  unsigned int cur = 0;
+  unsigned int region_count = 0;
+  unsigned int remaining_buf = 0;
+  unsigned short length = 0;
+
+  region_t *regions = NULL;
+  unsigned char start_byte = 0x81;
+
+  if (buf == NULL || buf_size == 0) {
+    *region_count_ref = region_count;
+    return regions;
+  }
+
+  while (cur_ptr < end_ptr) {
+    remaining_buf = end_ptr - cur_ptr;
+    
+    // Check if the first bytes are 0x81
+    if (*cur_ptr != start_byte) {
+      cur_ptr++;
+      cur++;
+      continue;
+    }
+
+    region_count++;
+    regions = (region_t *)ck_realloc(regions, region_count * sizeof(region_t));
+    regions[region_count - 1].start_byte = cur;
+    regions[region_count - 1].state_sequence = NULL;
+    regions[region_count - 1].state_count = 0;
+    
+    if (remaining_buf >= 4) { 
+      length = (cur_ptr[2] << 8) | cur_ptr[3];
+      if(remaining_buf >= length){
+        regions[region_count - 1].end_byte = cur + length -1;
+        cur = cur + length;
+        cur_ptr = cur_ptr + length;
+      } else {
+        regions[region_count - 1].end_byte = buf_size - 1;
+        break;
+      }
+    } else {
+      regions[region_count - 1].end_byte = buf_size - 1;
+      break;
+    }
+  }
+
+  // in case region_count equals zero, it means that the structure of the buffer
+  // is broken hence we create one region for the whole buffer
+  if ((region_count == 0) && (buf_size > 0)) {
+    regions = (region_t *)ck_realloc(regions, sizeof(region_t));
+    regions[0].start_byte = 0;
+    regions[0].end_byte = buf_size - 1;
+    regions[0].state_sequence = NULL;
+    regions[0].state_count = 0;
+    region_count = 1;
+  }
+
+    *region_count_ref = region_count;
+    return regions;
+}
 
 //same as extract request
 //buf: response data; state_count_ref: 
@@ -1061,6 +1193,60 @@ unsigned int *extract_response_codes_dnp3(unsigned char *buf, unsigned int buf_s
     }else{
       break;
     }
+  }
+
+  *state_count_ref = state_count;
+  return state_sequence;
+}
+
+unsigned int *extract_response_codes_bacnetip(unsigned char *buf, unsigned int buf_size, unsigned int *state_count_ref) {
+  unsigned char *cur_ptr = buf;
+  unsigned char *end_ptr = buf + buf_size;
+  unsigned int *state_sequence = NULL;
+  unsigned int state_count = 0;
+  unsigned char start_byte = 0x81;
+  unsigned short length = 0;
+  unsigned int remaining_buf = 0;
+  unsigned int message_code;
+
+  state_count++;
+  state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+  state_sequence[state_count - 1] = 0;
+
+  //state_count++;
+  //state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+  //state_sequence[state_count - 1] = UINT_MAX; // state including 0
+
+  if (buf == NULL || buf_size == 0) {
+    *state_count_ref = state_count;
+    return state_sequence;
+  }
+
+  while (cur_ptr < end_ptr) {
+    remaining_buf = end_ptr - cur_ptr;
+    // Check if the first bytes are 0x81
+    if (*cur_ptr != start_byte) {
+      cur_ptr++;
+      continue;
+    }
+
+    if(remaining_buf < 2)
+      break;
+
+    message_code = cur_ptr[1];
+    state_count++;
+    state_sequence = (unsigned int *)ck_realloc(state_sequence, state_count * sizeof(unsigned int));
+    state_sequence[state_count - 1] = message_code;
+
+    if (remaining_buf >= 4) { 
+      length = (cur_ptr[2] << 8) | cur_ptr[3];
+      if(remaining_buf >= length){
+        cur_ptr = cur_ptr + length;
+      } else {
+        break;
+      }
+    }else
+      break; 
   }
 
   *state_count_ref = state_count;
