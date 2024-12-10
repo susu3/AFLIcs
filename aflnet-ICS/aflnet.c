@@ -220,7 +220,7 @@ region_t *extract_requests_ethernetip(unsigned char *buf, unsigned int buf_size,
 }
 
 //SLMP ASCII code
-region_t *extract_request_slmpa(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+region_t *extract_requests_slmpa(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
   unsigned char* end_ptr = buf + buf_size;
   unsigned char* cur_ptr = buf;
   unsigned int cur = 0;
@@ -311,7 +311,7 @@ region_t *extract_request_slmpa(unsigned char* buf, unsigned int buf_size, unsig
 }
 
 //SLMP Binary code
-region_t *extract_request_slmpb(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+region_t *extract_requests_slmpb(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
   unsigned char* end_ptr = buf + buf_size;
   unsigned char* cur_ptr = buf;
   unsigned int cur = 0;
@@ -399,7 +399,7 @@ region_t *extract_request_slmpb(unsigned char* buf, unsigned int buf_size, unsig
 }
 
 //OPC UA Connection Protocol
-region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+region_t *extract_requests_opcuacp(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
   unsigned char* end_ptr = buf + buf_size;
   unsigned char* cur_ptr = buf;
   unsigned int cur = 0;
@@ -480,7 +480,7 @@ region_t *extract_request_opcuacp(unsigned char* buf, unsigned int buf_size, uns
   return regions;
 }
 
-region_t *extract_request_dnp3(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+region_t *extract_requests_dnp3(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
   unsigned char *end_ptr = buf + buf_size;
   unsigned char *cur_ptr = buf;
   unsigned int cur = 0;
@@ -633,7 +633,7 @@ unsigned short compute_length_bacnetip(unsigned char* buf, unsigned int buf_size
   return length;
 }*/
 
-region_t *extract_request_bacnetip(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
+region_t *extract_requests_bacnetip(unsigned char* buf, unsigned int buf_size, unsigned int* region_count_ref){
   unsigned char *end_ptr = buf + buf_size;
   unsigned char *cur_ptr = buf;
   unsigned int cur = 0;
